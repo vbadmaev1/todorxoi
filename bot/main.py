@@ -59,19 +59,18 @@ def _check_shaping() -> None:
     (HarfBuzz через Raqm). Без Raqm Pillow молча рисует изолированные формы —
     картинка выходит нечитаемой. Проверяем на старте, а не когда первый
     пользователь получит несвязный набор букв."""
-    from core.todo_image import HAS_RAQM, shaping_status
+    from core.todo_image import SHAPING_OK, shaping_status
 
-    if HAS_RAQM:
+    if SHAPING_OK:
         log.info("рендер картинок: %s", shaping_status())
     else:
         log.warning("КАРТИНКИ БУДУТ НЕПРАВИЛЬНЫМИ: %s", shaping_status())
         log.warning(
-            "Починить: pip install -U --force-reinstall Pillow, затем "
-            "python -c \"from PIL import features; print(features.check('raqm'))\" "
-            "должно напечатать True. В Colab и в колёсах с PyPI Raqm есть, "
-            "в сборках из conda — часто нет. До починки бот рисует картинки "
-            "как раньше, но помечает их предупреждением; STRICT_SHAPING=1 "
-            "выключает такой рендер совсем. /translit и /todo не затронуты."
+            "Починить: pip install -r requirements.txt — нужны uharfbuzz и "
+            "freetype-py, они не зависят от сборки Pillow и работают в любом "
+            "окружении. До починки бот рисует картинки, но помечает их "
+            "предупреждением; STRICT_SHAPING=1 выключает такой рендер совсем. "
+            "Режимы /translit и /todo не затронуты."
         )
 
 

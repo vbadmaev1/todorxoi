@@ -28,6 +28,7 @@ import warnings
 
 from PIL import Image, ImageDraw, ImageFont, features
 
+from . import shaper
 from .translit_todo import translit_to_todo
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -52,23 +53,22 @@ _NNBSP = " "
 # Если Raqm в сборке Pillow нет, Pillow МОЛЧА откатывается на примитивную
 # раскладку: каждая буква рисуется в изолированной форме, буквы не
 # соединяются. Картинка получается похожей на текст, но читать её трудно.
-# Молча — то есть без единой ошибки, поэтому проверяем сами.
+# Есть Raqm в конкретной сборке или нет — свойство окружения: в Colab и в
+# колёсах с PyPI он есть, в conda и системных пакетах часто нет.
 #
-# В Google Colab и в колёсах Pillow с PyPI Raqm есть, поэтому там всё
-# рисуется правильно. В сборках из conda и системных пакетов его часто нет.
+# Поэтому основной путь здесь — НЕ Pillow: модуль shaper.py зовёт HarfBuzz
+# напрямую (uharfbuzz) и растеризует глифы через FreeType. Работает
+# одинаково в любом окружении и от сборки Pillow не зависит вовсе.
 #
-# Проверить в своём окружении:
-#     python -c "from PIL import features; print(features.check('raqm'))"
-#
-# Лечится установкой Pillow из PyPI:
-#     pip install -U --force-reinstall Pillow
-#
-# ПОВЕДЕНИЕ БЕЗ RAQM: по умолчанию картинка всё равно рисуется, но бот
-# предупреждает под ней, что буквы не соединены — молчать об этом нельзя,
-# а отказывать в рендере совсем значит ломать работавшую функцию.
-# STRICT_SHAPING=1 возвращает жёсткий отказ вместо предупреждения.
+# Порядок выбора движка:
+#   1. uharfbuzz + freetype-py  — основной, ставится из requirements.txt;
+#   2. Pillow с Raqm            — если первых нет, но повезло со сборкой;
+#   3. Pillow без Raqm          — рисует несоединённые буквы, бот помечает
+#                                 такую картинку предупреждением.
+# STRICT_SHAPING=1 запрещает третий вариант вместо предупреждения.
 
 HAS_RAQM = features.check("raqm")
+HAS_HARFBUZZ = shaper.HAS_HARFBUZZ
 
 _LAYOUT = (
     ImageFont.Layout.RAQM
@@ -80,38 +80,47 @@ STRICT_SHAPING = os.environ.get("STRICT_SHAPING", "").lower() in {
     "1", "true", "yes", "on", "да",
 }
 
-_NO_RAQM_MESSAGE = (
-    "Pillow собран без Raqm — буквы тодо бичиг не соединяются "
-    "(каждая рисуется в изолированной форме). Установите Pillow из PyPI: "
-    "pip install -U --force-reinstall Pillow — и проверьте: "
-    "python -c \"from PIL import features; print(features.check('raqm'))\""
+# буквы соединяются — то есть письмо настоящее, а не набор изолированных форм
+SHAPING_OK = HAS_HARFBUZZ or HAS_RAQM
+SHAPING_ENGINE = "harfbuzz" if HAS_HARFBUZZ else ("raqm" if HAS_RAQM else "none")
+
+_NO_SHAPING_MESSAGE = (
+    "Буквы тодо бичиг не соединяются: нет ни uharfbuzz, ни Pillow с Raqm. "
+    "Поставьте зависимости проекта: pip install -r requirements.txt "
+    "(нужны uharfbuzz и freetype-py) — это лечит проблему в любом окружении."
 )
 
 # короткая версия — её бот показывает пользователю под картинкой
 SHAPING_WARNING = (
-    "⚠️ Буквы не соединены: в этом окружении Pillow собран без Raqm. "
+    "⚠️ Буквы не соединены: в этом окружении нет движка раскладки текста. "
     "Как починить — в логах бота и в README."
 )
 
 
 class ShapingUnavailable(RuntimeError):
-    """Raqm недоступен, а STRICT_SHAPING=1 требует его наличия."""
+    """Соединять буквы нечем, а STRICT_SHAPING=1 требует этого."""
 
 
 def require_shaping() -> None:
-    """Проверка перед рендером. Без Raqm ругается только в строгом режиме —
-    в обычном рендер продолжается, а предупреждение уходит пользователю."""
-    if HAS_RAQM or not STRICT_SHAPING:
+    """Проверка перед рендером. Ругается только в строгом режиме — иначе
+    рендер продолжается, а предупреждение уходит пользователю."""
+    if SHAPING_OK or not STRICT_SHAPING:
         return
-    raise ShapingUnavailable(_NO_RAQM_MESSAGE)
+    raise ShapingUnavailable(_NO_SHAPING_MESSAGE)
 
 
 def shaping_status() -> str:
+    if HAS_HARFBUZZ:
+        return f"буквы соединяются, движок: HarfBuzz напрямую ({shaper.status()})"
     if HAS_RAQM:
-        return f"Raqm есть (harfbuzz {features.version('harfbuzz')}) — буквы соединяются"
+        return (
+            "буквы соединяются, движок: Pillow + Raqm "
+            f"(harfbuzz {features.version('harfbuzz')}). "
+            "Поставьте uharfbuzz, чтобы не зависеть от сборки Pillow"
+        )
     if STRICT_SHAPING:
-        return "Raqm НЕТ, STRICT_SHAPING=1 — рендер картинок отключён"
-    return "Raqm НЕТ — картинки рисуются, но буквы не соединяются"
+        return "движка раскладки НЕТ, STRICT_SHAPING=1 — рендер картинок отключён"
+    return "движка раскладки НЕТ — картинки рисуются, но буквы не соединяются"
 
 
 # =============================================================================
@@ -185,7 +194,35 @@ def _text_size(draw, text, font):
     return bbox[2] - bbox[0], bbox[3] - bbox[1], bbox
 
 
-def _wrap_line(line, font, max_column_height, draw):
+# --- две реализации одного и того же: измерить строку и нарисовать строку ---
+# Выше по коду выбирается, какая из них в ходу. Вызывающий код (перенос по
+# словам, сборка столбцов) от выбора не зависит.
+
+
+def _use_harfbuzz(font_path):
+    # шрифт по умолчанию от PIL — не файл, HarfBuzz его не откроет
+    return HAS_HARFBUZZ and font_path is not None
+
+
+def _measure_width(text, font, font_path, font_size, draw_probe):
+    if _use_harfbuzz(font_path):
+        return shaper.measure(text, font_path, font_size)
+    return _text_size(draw_probe, text, font)[0]
+
+
+def _render_strip(text, font, font_path, font_size, fg, bg, pad=6):
+    """Строка, нарисованная горизонтально (поворот — снаружи)."""
+    if _use_harfbuzz(font_path):
+        return shaper.render_line(text, font_path, font_size, fg, bg, pad=pad)
+    w, h, bbox = _text_size(ImageDraw.Draw(Image.new("RGBA", (10, 10))), text, font)
+    strip = Image.new("RGBA", (w + pad * 2, h + pad * 2), bg)
+    ImageDraw.Draw(strip).text(
+        (pad - bbox[0], pad - bbox[1]), text, font=font, fill=fg
+    )
+    return strip
+
+
+def _wrap_line(line, font, font_path, font_size, max_column_height, draw):
     """Разбивает одну строку тодо-бичиг текста на под-строки так, чтобы
     каждая под-строка при горизонтальном рендере не превышала по ширине
     max_column_height (это и есть будущая высота столбца после поворота).
@@ -195,7 +232,7 @@ def _wrap_line(line, font, max_column_height, draw):
     current = ""
     for word in words:
         candidate = word if not current else current + " " + word
-        w, _, _ = _text_size(draw, candidate, font)
+        w = _measure_width(candidate, font, font_path, font_size, draw)
         if w <= max_column_height or not current:
             current = candidate
         else:
@@ -206,14 +243,10 @@ def _wrap_line(line, font, max_column_height, draw):
     return sublines
 
 
-def _render_column(subline, font, draw_probe, fg, bg, pad=6):
+def _render_column(subline, font, font_path, font_size, fg, bg, pad=6):
     """Рисует одну под-строку горизонтально, затем поворачивает на 90°
     по часовой — получается один готовый вертикальный столбец."""
-    w, h, bbox = _text_size(draw_probe, subline, font)
-    strip = Image.new("RGBA", (w + pad * 2, h + pad * 2), bg)
-    ImageDraw.Draw(strip).text(
-        (pad - bbox[0], pad - bbox[1]), subline, font=font, fill=fg
-    )
+    strip = _render_strip(subline, font, font_path, font_size, fg, bg, pad=pad)
     return strip.rotate(-90, expand=True)
 
 
@@ -252,9 +285,11 @@ def render_todo_paragraph(
         line = line.strip("\n")
         if not line.strip():
             continue
-        sublines = _wrap_line(line, font, max_column_height, draw_probe)
+        sublines = _wrap_line(
+            line, font, font_path, font_size, max_column_height, draw_probe
+        )
         for i, subline in enumerate(sublines):
-            col = _render_column(subline, font, draw_probe, fg, bg)
+            col = _render_column(subline, font, font_path, font_size, fg, bg)
             columns.append((col, i == 0))
 
     if not columns:

@@ -127,7 +127,7 @@ def process(text: str, target: str) -> Result:
 
     elif target == TARGET_IMAGE:
         from .todo_image import (
-            HAS_RAQM,
+            SHAPING_OK,
             ShapingUnavailable,
             render_todo_bytes,
             require_shaping,
@@ -141,9 +141,9 @@ def process(text: str, target: str) -> Result:
                 "Рендер картинок отключён: окружение не умеет соединять "
                 "буквы тодо бичиг (STRICT_SHAPING=1). Подробности — в логах."
             ) from exc
-        # без Raqm картинку всё равно рисуем, но честно помечаем результат,
-        # чтобы никто не принял несоединённые буквы за правильное письмо
-        res.shaping_ok = HAS_RAQM
+        # без движка раскладки картинку всё равно рисуем, но честно помечаем
+        # результат, чтобы никто не принял несоединённые буквы за письмо
+        res.shaping_ok = SHAPING_OK
 
         if script == SCRIPT_TODO:
             res.todo = text

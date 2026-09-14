@@ -154,9 +154,13 @@ async def main():
     dp.include_router(build_router())
 
     print("\n0. Окружение")
-    from core.todo_image import HAS_RAQM, shaping_status
+    from core.todo_image import SHAPING_ENGINE, SHAPING_OK, shaping_status
 
-    check(HAS_RAQM, f"Pillow умеет соединять буквы тодо бичиг — {shaping_status()}")
+    check(SHAPING_OK, f"буквы тодо бичиг соединяются — {shaping_status()}")
+    check(
+        SHAPING_ENGINE == "harfbuzz",
+        "используется HarfBuzz напрямую (не зависит от сборки Pillow)",
+    )
 
     print("\n1. Команды и меню")
     await dp.feed_update(bot, msg("/start"))

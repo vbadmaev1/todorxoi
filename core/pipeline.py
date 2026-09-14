@@ -124,7 +124,17 @@ def process(text: str, target: str) -> Result:
         res.steps_ms["translit→тодо"] = (time.perf_counter() - t0) * 1000
 
     elif target == TARGET_IMAGE:
-        from .todo_image import render_todo_bytes
+        from .todo_image import ShapingUnavailable, render_todo_bytes, require_shaping
+
+        try:
+            require_shaping()
+        except ShapingUnavailable as exc:
+            # окружение не умеет соединять буквы — лучше честно сказать об
+            # этом, чем прислать картинку, которую невозможно прочитать
+            raise PipelineError(
+                "Картинку сейчас не собрать: окружение не умеет соединять "
+                "буквы тодо бичиг. Подробности — в логах бота."
+            ) from exc
 
         if script == SCRIPT_TODO:
             res.todo = text

@@ -153,6 +153,11 @@ async def main():
     dp["config"] = config
     dp.include_router(build_router())
 
+    print("\n0. Окружение")
+    from core.todo_image import HAS_RAQM, shaping_status
+
+    check(HAS_RAQM, f"Pillow умеет соединять буквы тодо бичиг — {shaping_status()}")
+
     print("\n1. Команды и меню")
     await dp.feed_update(bot, msg("/start"))
     _, m = session.last("SendMessage")

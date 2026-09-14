@@ -26,7 +26,7 @@ import io
 import os
 import warnings
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, features
 
 from .translit_todo import translit_to_todo
 
@@ -37,6 +37,69 @@ _DEFAULT_FONT = os.path.join(
 DEFAULT_TODO_FONT = os.environ.get("FONT_PATH", _DEFAULT_FONT)
 
 _NNBSP = " "
+
+
+# =============================================================================
+# ГЛАВНОЕ ТРЕБОВАНИЕ К ОКРУЖЕНИЮ: Pillow, собранный с Raqm
+# =============================================================================
+#
+# Монгольское письмо (и тодо бичиг вместе с ним) — курсивное: буква имеет
+# разные формы в начале, середине и конце слова, и соседние буквы сливаются
+# в один вертикальный стержень. Выбор нужной формы делает не шрифт сам по
+# себе, а движок раскладки текста — HarfBuzz, к которому Pillow ходит через
+# библиотеку Raqm.
+#
+# Если Raqm в сборке Pillow нет, Pillow МОЛЧА откатывается на примитивную
+# раскладку: каждая буква рисуется в изолированной форме, буквы не
+# соединяются. Картинка получается похожей на текст, но читать её нельзя —
+# это и есть «несвязная хрень». Молча — то есть без единой ошибки, поэтому
+# проверяем сами и падаем с внятным сообщением вместо того, чтобы отправить
+# пользователю заведомо неправильную картинку.
+#
+# Проверить в своём окружении:
+#     python -c "from PIL import features; print(features.check('raqm'))"
+#
+# Чаще всего Raqm отсутствует в Pillow из conda/системного пакета. Лечится
+# установкой Pillow из PyPI: pip install -U --force-reinstall Pillow
+
+HAS_RAQM = features.check("raqm")
+
+_LAYOUT = (
+    ImageFont.Layout.RAQM
+    if HAS_RAQM and hasattr(ImageFont, "Layout")
+    else getattr(getattr(ImageFont, "Layout", None), "BASIC", None)
+)
+
+# аварийный клапан: ALLOW_UNSHAPED=1 разрешает рисовать без Raqm
+ALLOW_UNSHAPED = os.environ.get("ALLOW_UNSHAPED", "").lower() in {
+    "1", "true", "yes", "on", "да",
+}
+
+_NO_RAQM_MESSAGE = (
+    "Pillow собран без Raqm — буквы тодо бичиг не будут соединяться "
+    "(каждая нарисуется в изолированной форме, читать такую картинку "
+    "нельзя). Установите Pillow из PyPI: "
+    "pip install -U --force-reinstall Pillow — и проверьте: "
+    "python -c \"from PIL import features; print(features.check('raqm'))\""
+)
+
+
+class ShapingUnavailable(RuntimeError):
+    """Raqm недоступен — рисовать тодо бичиг нечем."""
+
+
+def require_shaping() -> None:
+    if HAS_RAQM or ALLOW_UNSHAPED:
+        return
+    raise ShapingUnavailable(_NO_RAQM_MESSAGE)
+
+
+def shaping_status() -> str:
+    if HAS_RAQM:
+        return f"Raqm есть (harfbuzz {features.version('harfbuzz')}) — буквы соединяются"
+    if ALLOW_UNSHAPED:
+        return "Raqm НЕТ, но ALLOW_UNSHAPED=1 — картинки будут несвязными"
+    return "Raqm НЕТ — рендер картинок работать не будет"
 
 
 # =============================================================================
@@ -98,6 +161,10 @@ def _load_font(font_path, font_size):
         except TypeError:
             # старые версии Pillow не умеют load_default(size=...)
             return ImageFont.load_default()
+    # layout_engine указываем явно: без него Pillow сам решает, чем рисовать,
+    # и при отсутствии Raqm тихо берёт примитивную раскладку
+    if _LAYOUT is not None:
+        return ImageFont.truetype(font_path, font_size, layout_engine=_LAYOUT)
     return ImageFont.truetype(font_path, font_size)
 
 
@@ -158,6 +225,8 @@ def render_todo_paragraph(
     out_path — если задан, картинка ещё и сохраняется на диск.
     Возвращает объект PIL.Image.
     """
+    require_shaping()
+
     if isinstance(lines, str):
         lines = lines.split("\n")
 
@@ -235,6 +304,7 @@ def render_todo_bytes(todo_text, max_side=MAX_SIDE, **kwargs):
 
 
 if __name__ == "__main__":
+    print("Раскладка текста:", shaping_status())
     sentence = "xalimaq ulus ger-yēn naran üde xalīlγaǰi baridaq"
     render_todo_image(sentence, out_path="demo_sentence.png", max_column_height=260)
     print("сохранено: demo_sentence.png")

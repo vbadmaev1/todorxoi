@@ -1,5 +1,10 @@
 # Проверено на aiogram 3.31.0, Pillow 12.2.0, torch 2.14 (CPU).
 aiogram>=3.15,<4
+
+# ВАЖНО: Pillow должен быть собран с Raqm, иначе буквы тодо бичиг не
+# соединяются и картинка получается нечитаемой. Колёса с PyPI его содержат,
+# сборки из conda и системных пакетов — часто нет. Проверка:
+#   python -c "from PIL import features; print(features.check('raqm'))"  # True
 Pillow>=10.0,<13
 python-dotenv>=1.0,<2
 

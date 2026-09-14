@@ -54,10 +54,29 @@ async def _warmup() -> None:
         log.exception("прогрев модели не удался — бот продолжит работу")
 
 
+def _check_shaping() -> None:
+    """Монгольское письмо курсивное: формы букв выбирает движок раскладки
+    (HarfBuzz через Raqm). Без Raqm Pillow молча рисует изолированные формы —
+    картинка выходит нечитаемой. Проверяем на старте, а не когда первый
+    пользователь получит несвязный набор букв."""
+    from core.todo_image import HAS_RAQM, shaping_status
+
+    if HAS_RAQM:
+        log.info("рендер картинок: %s", shaping_status())
+    else:
+        log.error("РЕНДЕР КАРТИНОК СЛОМАН: %s", shaping_status())
+        log.error(
+            "Починить: pip install -U --force-reinstall Pillow, затем "
+            "python -c \"from PIL import features; print(features.check('raqm'))\" "
+            "должно напечатать True. Режимы /translit и /todo работают и так."
+        )
+
+
 async def main() -> None:
     config = Config.from_env()
     setup_logging(config.log_level)
     config.validate()
+    _check_shaping()
 
     storage = Storage(config.db_path, config.jsonl_path)
     storage.connect()

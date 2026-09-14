@@ -64,6 +64,14 @@ CREATE TABLE IF NOT EXISTS feedback (
     correction  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id    INTEGER PRIMARY KEY,
+    fg         TEXT,
+    bg         TEXT,
+    size       TEXT,
+    updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_requests_user ON requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_requests_created ON requests(created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_request ON feedback(request_id);
@@ -177,6 +185,40 @@ class Storage:
             row = cur.fetchone()
         return dict(row) if row else None
 
+    # ---------------------------------------------- настройки картинки
+
+    def _get_settings(self, user_id: int) -> dict:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT fg, bg, size FROM user_settings WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        if not row:
+            return {}
+        # None-поля не отдаём: пусть сработает значение по умолчанию
+        return {k: row[k] for k in ("fg", "bg", "size") if row[k]}
+
+    def _set_setting(self, user_id: int, field: str, value: str) -> None:
+        if field not in ("fg", "bg", "size"):
+            raise ValueError(f"неизвестная настройка: {field}")
+        with self._lock:
+            self._conn.execute(
+                f"""INSERT INTO user_settings (user_id, {field}, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                      {field} = excluded.{field},
+                      updated_at = excluded.updated_at""",
+                (user_id, value, _now()),
+            )
+            self._conn.commit()
+
+    def _reset_settings(self, user_id: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM user_settings WHERE user_id = ?", (user_id,)
+            )
+            self._conn.commit()
+
     def _stats(self) -> dict:
         with self._lock:
             c = self._conn
@@ -259,6 +301,15 @@ class Storage:
 
     async def get_request(self, request_id: int) -> Optional[dict]:
         return await asyncio.to_thread(self._get_request, request_id)
+
+    async def get_settings(self, user_id: int) -> dict:
+        return await asyncio.to_thread(self._get_settings, user_id)
+
+    async def set_setting(self, user_id: int, field: str, value: str) -> None:
+        await asyncio.to_thread(self._set_setting, user_id, field, value)
+
+    async def reset_settings(self, user_id: int) -> None:
+        await asyncio.to_thread(self._reset_settings, user_id)
 
     async def stats(self) -> dict:
         return await asyncio.to_thread(self._stats)

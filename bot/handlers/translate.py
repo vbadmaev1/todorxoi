@@ -20,6 +20,7 @@ from .. import formatting, keyboards, texts
 from ..config import Config
 from ..state import get_mode
 from ..storage import Storage
+from .settings import load_options
 
 log = logging.getLogger(__name__)
 router = Router(name="translate")
@@ -52,8 +53,12 @@ async def handle_text(
         "input_text": text,
     }
 
+    options = None
+    if target == core.TARGET_IMAGE and user:
+        options = await load_options(storage, user.id)
+
     try:
-        res = await asyncio.to_thread(core.process, text, target)
+        res = await asyncio.to_thread(core.process, text, target, options)
     except core.PipelineError as exc:
         await storage.save_request(ok=False, error=str(exc), **base)
         await message.answer(f"⚠️ {exc}")
@@ -88,8 +93,11 @@ async def _send_image(message: Message, res, markup) -> None:
     caption = formatting.render_caption(res)
     w, h = res.image_size or (0, 0)
     too_thin = h and (max(w, h) / max(1, min(w, h))) > _PHOTO_MAX_RATIO
-    if too_thin:
-        # очень вытянутую картинку Telegram как фото не примет — шлём файлом
+    # Прозрачный фон обязан уехать документом: фото Telegram пережимает в
+    # JPEG, а там прозрачности нет — она станет чёрным прямоугольником,
+    # то есть ровно то, ради чего человек её включал, и потеряется.
+    # Очень вытянутую картинку Telegram как фото просто не примет.
+    if res.transparent or too_thin:
         await message.answer_document(photo, caption=caption, reply_markup=markup)
     else:
         await message.answer_photo(photo, caption=caption, reply_markup=markup)

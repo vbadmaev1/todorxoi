@@ -28,6 +28,7 @@ COMMANDS = [
     BotCommand(command="todo", description="→ тодо бичиг"),
     BotCommand(command="image", description="→ картинка"),
     BotCommand(command="mode", description="Текущий режим"),
+    BotCommand(command="settings", description="Цвета и размер картинки"),
     BotCommand(command="help", description="Как работает бот"),
     BotCommand(command="cancel", description="Отменить ввод исправления"),
 ]

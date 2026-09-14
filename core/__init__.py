@@ -6,11 +6,14 @@
 """
 
 from .pipeline import (  # noqa: F401
+    DEFAULT_FONT_SIZE,
+    FONT_SIZES,
     MAX_INPUT_CHARS,
     SCRIPT_TITLES,
     TARGET_IMAGE,
     TARGET_TODO,
     TARGET_TRANSLIT,
+    ImageOptions,
     PipelineError,
     Result,
     process,
@@ -24,6 +27,9 @@ from .translit_todo import (  # noqa: F401
 __all__ = [
     "process",
     "Result",
+    "ImageOptions",
+    "FONT_SIZES",
+    "DEFAULT_FONT_SIZE",
     "PipelineError",
     "TARGET_TRANSLIT",
     "TARGET_TODO",

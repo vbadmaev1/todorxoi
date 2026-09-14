@@ -215,6 +215,30 @@ async def main():
     check(" " in translit_to_todo(suffix),
           "у суффикса, наоборот, узкий неразрывный пробел")
 
+    print("\n4b. Настройки картинки")
+    await dp.feed_update(bot, msg("/settings"))
+    _, m = session.last("SendMessage")
+    check("Настройки картинки" in m.text, "/settings показывает текущие настройки")
+
+    await dp.feed_update(bot, cb("set:set:bg:transparent"))
+    saved = await storage.get_settings(USER.id)
+    check(saved.get("bg") == "transparent", "прозрачный фон сохранён в БД")
+
+    await dp.feed_update(bot, cb("set:set:fg:red"))
+    await dp.feed_update(bot, msg("/image хальмг"))
+    name, m = session.last()
+    check(name == "SendDocument", f"с прозрачным фоном картинка ушла файлом ({name})")
+
+    await dp.feed_update(bot, cb("set:set:bg:red"))  # фон = цвет текста
+    await dp.feed_update(bot, msg("/image хальмг"))
+    name, m = session.last()
+    check("совпадали" in (m.caption or ""), "про откат по цветам сказано в подписи")
+    check(name == "SendPhoto", "после отката фон непрозрачный — снова фото")
+
+    await dp.feed_update(bot, cb("set:reset:-"))
+    saved = await storage.get_settings(USER.id)
+    check(not saved, "сброс настроек очищает запись")
+
     print("\n5. Фидбэк: 👍")
     row = await storage.get_request(1)
     await dp.feed_update(bot, cb(f"fb:up:{row['id']}"))

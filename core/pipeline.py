@@ -33,6 +33,32 @@ TARGET_IMAGE = "image"
 
 MAX_INPUT_CHARS = 1000
 
+FONT_SIZES = {"small": 44, "medium": 64, "large": 96}
+DEFAULT_FONT_SIZE = "medium"
+
+
+@dataclass
+class ImageOptions:
+    """Как рисовать картинку. У каждого пользователя свои — хранятся в БД,
+    меняются командой /settings."""
+
+    fg: str = "black"
+    bg: str = "white"
+    size: str = DEFAULT_FONT_SIZE
+
+    @property
+    def font_size(self) -> int:
+        return FONT_SIZES.get(self.size, FONT_SIZES[DEFAULT_FONT_SIZE])
+
+    @property
+    def max_column_height(self) -> int:
+        # высота столбца соразмерна кеглю, иначе крупный шрифт ломает
+        # перенос: на строку влезает слишком мало букв
+        return int(os.environ.get("MAX_COLUMN_HEIGHT", "900")) * self.font_size // 64
+
+    def as_dict(self) -> dict:
+        return {"fg": self.fg, "bg": self.bg, "size": self.size}
+
 
 class PipelineError(Exception):
     """Ошибка, текст которой можно показать пользователю как есть."""
@@ -49,6 +75,10 @@ class Result:
     image_size: Optional[Tuple[int, int]] = None
     # False — картинка нарисована без шейпинга: буквы не соединены
     shaping_ok: bool = True
+    # прозрачный фон: такую картинку надо слать документом, не фото
+    transparent: bool = False
+    # цвета текста и фона совпали, пришлось откатиться на чёрное по белому
+    color_fallback: bool = False
     elapsed_ms: float = 0.0
     steps_ms: dict = field(default_factory=dict)
     stats: dict = field(default_factory=dict)
@@ -97,9 +127,13 @@ def _to_translit(text: str, script: str, res: Result) -> str:
     )
 
 
-def process(text: str, target: str) -> Result:
+def process(text: str, target: str, options: Optional[ImageOptions] = None) -> Result:
     """Основная функция. Синхронная и не быстрая (модель) — в боте её
-    нужно звать через asyncio.to_thread."""
+    нужно звать через asyncio.to_thread.
+
+    options — настройки картинки конкретного пользователя; для режимов
+    транслитерации и тодо бичиг не используются."""
+    opts = options or ImageOptions()
     text = _check_input(text)
     script = detect_script(text)
     if script == SCRIPT_UNKNOWN:
@@ -153,11 +187,15 @@ def process(text: str, target: str) -> Result:
             res.todo = translit_to_todo(res.translit)
             res.steps_ms["translit→тодо"] = (time.perf_counter() - t0) * 1000
         t0 = time.perf_counter()
-        res.image, res.image_size = render_todo_bytes(
+        res.image, res.image_size, meta = render_todo_bytes(
             res.todo,
-            font_size=int(os.environ.get("FONT_SIZE", "64")),
-            max_column_height=int(os.environ.get("MAX_COLUMN_HEIGHT", "900")),
+            font_size=opts.font_size,
+            max_column_height=opts.max_column_height,
+            fg=opts.fg,
+            bg=opts.bg,
         )
+        res.transparent = meta["transparent"]
+        res.color_fallback = meta["color_fallback"]
         res.steps_ms["рендер"] = (time.perf_counter() - t0) * 1000
 
     else:

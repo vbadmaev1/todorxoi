@@ -76,5 +76,7 @@ def _image_caption(res: Result) -> str:
         from core.todo_image import SHAPING_WARNING
 
         blocks.append(SHAPING_WARNING)
+    if res.color_fallback:
+        blocks.append(texts.COLOR_FALLBACK_NOTE)
     blocks.append(timing_line(res))
     return "\n\n".join(blocks)

@@ -149,6 +149,40 @@ _TRANSPARENT_NAMES = {"transparent", "прозрачный", "none", "нет"}
 DEFAULT_FG = BASE_COLORS["black"]
 DEFAULT_BG = BASE_COLORS["white"]
 
+TRANSPARENT = "transparent"
+
+# Палитра для кнопок в боте: (ключ, подпись, квадратик).
+# Держим её здесь, рядом с самими цветами, чтобы телеграм-слой не заводил
+# собственный список и они не разъехались. Эмодзи — только те, что рисуются
+# и на старых клиентах: цветные квадраты из Unicode 9/12.
+PALETTE = [
+    ("black", "чёрный", "⬛"),
+    ("white", "белый", "⬜"),
+    ("red", "красный", "🟥"),
+    ("orange", "оранжевый", "🟧"),
+    ("yellow", "жёлтый", "🟨"),
+    ("green", "зелёный", "🟩"),
+    ("blue", "синий", "🟦"),
+    ("purple", "фиолетовый", "🟪"),
+    ("brown", "коричневый", "🟫"),
+    ("gold", "золотой", "🟡"),
+]
+
+# фон умеет ещё и прозрачность — для наложения на другие картинки
+BG_PALETTE = PALETTE + [(TRANSPARENT, "прозрачный", "▫️")]
+
+_PALETTE_LABELS = {key: (label, chip) for key, label, chip in BG_PALETTE}
+
+
+def color_label(key: str) -> str:
+    """«red» -> «🟥 красный». Для показа текущих настроек."""
+    label, chip = _PALETTE_LABELS.get(key, ("", ""))
+    return f"{chip} {label}".strip() or str(key)
+
+
+def is_transparent(name) -> bool:
+    return isinstance(name, str) and name.strip().lower() in _TRANSPARENT_NAMES
+
 
 def resolve_color(name, fallback, allow_transparent=False):
     """Название цвета (по-русски или по-английски) -> RGBA. Если имя не
@@ -167,12 +201,17 @@ def resolve_color(name, fallback, allow_transparent=False):
 
 
 def _resolve_fg_bg(fg, bg):
+    """Возвращает (цвет текста, цвет фона, был ли откат).
+
+    Откат нужен, когда цвета совпали: текст на таком фоне попросту не
+    видно, и честнее отдать читаемую картинку чёрным по белому, чем
+    пустой прямоугольник. Третьим значением сообщаем об этом наружу,
+    чтобы бот мог предупредить — иначе человек решит, что бот сломался."""
     fg_rgba = resolve_color(fg, DEFAULT_FG)
     bg_rgba = resolve_color(bg, DEFAULT_BG, allow_transparent=True)
     if fg_rgba == bg_rgba:
-        # одинаковые цвета -> текста не видно, откатываемся на чёрное-на-белом
-        return DEFAULT_FG, DEFAULT_BG
-    return fg_rgba, bg_rgba
+        return DEFAULT_FG, DEFAULT_BG, True
+    return fg_rgba, bg_rgba, False
 
 
 def _load_font(font_path, font_size):
@@ -268,14 +307,15 @@ def render_todo_paragraph(
     fg, bg   — название цвета словом (см. BASE_COLORS), не hex-код.
                bg="transparent"/"прозрачный" — пустой фон.
     out_path — если задан, картинка ещё и сохраняется на диск.
-    Возвращает объект PIL.Image.
+    Возвращает объект PIL.Image; атрибут .color_fallback на нём говорит,
+    пришлось ли откатиться на чёрное-по-белому из-за совпавших цветов.
     """
     require_shaping()
 
     if isinstance(lines, str):
         lines = lines.split("\n")
 
-    fg, bg = _resolve_fg_bg(fg, bg)
+    fg, bg, color_fallback = _resolve_fg_bg(fg, bg)
     font = _load_font(font_path, font_size)
     probe = Image.new("RGBA", (10, 10))
     draw_probe = ImageDraw.Draw(probe)
@@ -314,6 +354,9 @@ def render_todo_paragraph(
 
     if out_path:
         canvas.save(out_path)
+    # PIL.Image — обычный объект, поле на нём переживёт resize только если
+    # его перенести руками (см. render_todo_bytes)
+    canvas.color_fallback = color_fallback
     return canvas
 
 
@@ -335,9 +378,13 @@ def render_todo_bytes(todo_text, max_side=MAX_SIDE, **kwargs):
     """Готовый текст тодо бичиг -> PNG в памяти (io.BytesIO).
     Именно этим пользуется бот: файл на диск не пишется.
 
-    Возвращает (BytesIO, (ширина, высота)). Слишком большая картинка
-    (длинный текст = много столбцов) ужимается по большей стороне."""
+    Возвращает (BytesIO, (ширина, высота), meta), где meta — словарь с
+    color_fallback (пришлось ли спасать совпавшие цвета) и transparent
+    (прозрачный ли фон; такую картинку нельзя слать как фото — Telegram
+    пережмёт её в JPEG и прозрачность превратится в чёрный).
+    Слишком большая картинка ужимается по большей стороне."""
     img = render_todo_paragraph(todo_text, out_path=None, **kwargs)
+    color_fallback = getattr(img, "color_fallback", False)
     if max_side and max(img.size) > max_side:
         scale = max_side / max(img.size)
         img = img.resize(
@@ -347,7 +394,12 @@ def render_todo_bytes(todo_text, max_side=MAX_SIDE, **kwargs):
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
-    return buf, img.size
+    meta = {
+        "color_fallback": color_fallback,
+        # прозрачность запрашивали и её не отменил откат по совпавшим цветам
+        "transparent": is_transparent(kwargs.get("bg")) and not color_fallback,
+    }
+    return buf, img.size, meta
 
 
 if __name__ == "__main__":

@@ -51,16 +51,22 @@ _NNBSP = " "
 #
 # Если Raqm в сборке Pillow нет, Pillow МОЛЧА откатывается на примитивную
 # раскладку: каждая буква рисуется в изолированной форме, буквы не
-# соединяются. Картинка получается похожей на текст, но читать её нельзя —
-# это и есть «несвязная хрень». Молча — то есть без единой ошибки, поэтому
-# проверяем сами и падаем с внятным сообщением вместо того, чтобы отправить
-# пользователю заведомо неправильную картинку.
+# соединяются. Картинка получается похожей на текст, но читать её трудно.
+# Молча — то есть без единой ошибки, поэтому проверяем сами.
+#
+# В Google Colab и в колёсах Pillow с PyPI Raqm есть, поэтому там всё
+# рисуется правильно. В сборках из conda и системных пакетов его часто нет.
 #
 # Проверить в своём окружении:
 #     python -c "from PIL import features; print(features.check('raqm'))"
 #
-# Чаще всего Raqm отсутствует в Pillow из conda/системного пакета. Лечится
-# установкой Pillow из PyPI: pip install -U --force-reinstall Pillow
+# Лечится установкой Pillow из PyPI:
+#     pip install -U --force-reinstall Pillow
+#
+# ПОВЕДЕНИЕ БЕЗ RAQM: по умолчанию картинка всё равно рисуется, но бот
+# предупреждает под ней, что буквы не соединены — молчать об этом нельзя,
+# а отказывать в рендере совсем значит ломать работавшую функцию.
+# STRICT_SHAPING=1 возвращает жёсткий отказ вместо предупреждения.
 
 HAS_RAQM = features.check("raqm")
 
@@ -70,26 +76,32 @@ _LAYOUT = (
     else getattr(getattr(ImageFont, "Layout", None), "BASIC", None)
 )
 
-# аварийный клапан: ALLOW_UNSHAPED=1 разрешает рисовать без Raqm
-ALLOW_UNSHAPED = os.environ.get("ALLOW_UNSHAPED", "").lower() in {
+STRICT_SHAPING = os.environ.get("STRICT_SHAPING", "").lower() in {
     "1", "true", "yes", "on", "да",
 }
 
 _NO_RAQM_MESSAGE = (
-    "Pillow собран без Raqm — буквы тодо бичиг не будут соединяться "
-    "(каждая нарисуется в изолированной форме, читать такую картинку "
-    "нельзя). Установите Pillow из PyPI: "
+    "Pillow собран без Raqm — буквы тодо бичиг не соединяются "
+    "(каждая рисуется в изолированной форме). Установите Pillow из PyPI: "
     "pip install -U --force-reinstall Pillow — и проверьте: "
     "python -c \"from PIL import features; print(features.check('raqm'))\""
 )
 
+# короткая версия — её бот показывает пользователю под картинкой
+SHAPING_WARNING = (
+    "⚠️ Буквы не соединены: в этом окружении Pillow собран без Raqm. "
+    "Как починить — в логах бота и в README."
+)
+
 
 class ShapingUnavailable(RuntimeError):
-    """Raqm недоступен — рисовать тодо бичиг нечем."""
+    """Raqm недоступен, а STRICT_SHAPING=1 требует его наличия."""
 
 
 def require_shaping() -> None:
-    if HAS_RAQM or ALLOW_UNSHAPED:
+    """Проверка перед рендером. Без Raqm ругается только в строгом режиме —
+    в обычном рендер продолжается, а предупреждение уходит пользователю."""
+    if HAS_RAQM or not STRICT_SHAPING:
         return
     raise ShapingUnavailable(_NO_RAQM_MESSAGE)
 
@@ -97,9 +109,9 @@ def require_shaping() -> None:
 def shaping_status() -> str:
     if HAS_RAQM:
         return f"Raqm есть (harfbuzz {features.version('harfbuzz')}) — буквы соединяются"
-    if ALLOW_UNSHAPED:
-        return "Raqm НЕТ, но ALLOW_UNSHAPED=1 — картинки будут несвязными"
-    return "Raqm НЕТ — рендер картинок работать не будет"
+    if STRICT_SHAPING:
+        return "Raqm НЕТ, STRICT_SHAPING=1 — рендер картинок отключён"
+    return "Raqm НЕТ — картинки рисуются, но буквы не соединяются"
 
 
 # =============================================================================

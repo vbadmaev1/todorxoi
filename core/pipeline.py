@@ -47,6 +47,8 @@ class Result:
     todo: Optional[str] = None
     image: Optional[object] = None  # io.BytesIO с PNG
     image_size: Optional[Tuple[int, int]] = None
+    # False — картинка нарисована без шейпинга: буквы не соединены
+    shaping_ok: bool = True
     elapsed_ms: float = 0.0
     steps_ms: dict = field(default_factory=dict)
     stats: dict = field(default_factory=dict)
@@ -124,17 +126,24 @@ def process(text: str, target: str) -> Result:
         res.steps_ms["translit→тодо"] = (time.perf_counter() - t0) * 1000
 
     elif target == TARGET_IMAGE:
-        from .todo_image import ShapingUnavailable, render_todo_bytes, require_shaping
+        from .todo_image import (
+            HAS_RAQM,
+            ShapingUnavailable,
+            render_todo_bytes,
+            require_shaping,
+        )
 
         try:
             require_shaping()
         except ShapingUnavailable as exc:
-            # окружение не умеет соединять буквы — лучше честно сказать об
-            # этом, чем прислать картинку, которую невозможно прочитать
+            # сюда попадаем только при STRICT_SHAPING=1
             raise PipelineError(
-                "Картинку сейчас не собрать: окружение не умеет соединять "
-                "буквы тодо бичиг. Подробности — в логах бота."
+                "Рендер картинок отключён: окружение не умеет соединять "
+                "буквы тодо бичиг (STRICT_SHAPING=1). Подробности — в логах."
             ) from exc
+        # без Raqm картинку всё равно рисуем, но честно помечаем результат,
+        # чтобы никто не принял несоединённые буквы за правильное письмо
+        res.shaping_ok = HAS_RAQM
 
         if script == SCRIPT_TODO:
             res.todo = text

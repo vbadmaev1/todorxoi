@@ -64,11 +64,14 @@ def _check_shaping() -> None:
     if HAS_RAQM:
         log.info("рендер картинок: %s", shaping_status())
     else:
-        log.error("РЕНДЕР КАРТИНОК СЛОМАН: %s", shaping_status())
-        log.error(
+        log.warning("КАРТИНКИ БУДУТ НЕПРАВИЛЬНЫМИ: %s", shaping_status())
+        log.warning(
             "Починить: pip install -U --force-reinstall Pillow, затем "
             "python -c \"from PIL import features; print(features.check('raqm'))\" "
-            "должно напечатать True. Режимы /translit и /todo работают и так."
+            "должно напечатать True. В Colab и в колёсах с PyPI Raqm есть, "
+            "в сборках из conda — часто нет. До починки бот рисует картинки "
+            "как раньше, но помечает их предупреждением; STRICT_SHAPING=1 "
+            "выключает такой рендер совсем. /translit и /todo не затронуты."
         )
 
 

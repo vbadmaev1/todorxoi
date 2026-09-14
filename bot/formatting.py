@@ -68,5 +68,9 @@ def _image_caption(res: Result) -> str:
     blocks = [_header(res)]
     if res.translit:
         blocks.append(f"Транслитерация:\n<code>{escape(res.translit)}</code>")
+    if not res.shaping_ok:
+        from core.todo_image import SHAPING_WARNING
+
+        blocks.append(SHAPING_WARNING)
     blocks.append(timing_line(res))
     return "\n\n".join(blocks)

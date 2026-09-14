@@ -169,7 +169,7 @@ async def main():
 
     await dp.feed_update(bot, msg("/help"))
     _, m = session.last("SendMessage")
-    check("Три режима" in m.text, "/help описывает логику")
+    check("Как пользоваться" in m.text, "/help описывает логику")
 
     await dp.feed_update(bot, msg("/mode"))
     _, m = session.last("SendMessage")
@@ -232,7 +232,7 @@ async def main():
     await dp.feed_update(bot, cb("set:set:bg:red"))  # фон = цвет текста
     await dp.feed_update(bot, msg("/image хальмг"))
     name, m = session.last()
-    check("совпадали" in (m.caption or ""), "про откат по цветам сказано в подписи")
+    check("совпал с фоном" in (m.caption or ""), "про откат по цветам сказано в подписи")
     check(name == "SendPhoto", "после отката фон непрозрачный — снова фото")
 
     await dp.feed_update(bot, cb("set:reset:-"))

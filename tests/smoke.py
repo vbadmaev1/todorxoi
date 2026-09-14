@@ -196,6 +196,25 @@ async def main():
     check(name in ("SendPhoto", "SendDocument"), f"пришла картинка ({name})")
     check("⏱" in (m.caption or ""), "в подписи к картинке есть время работы")
 
+    print("\n4a. Дефис: составное слово vs суффикс")
+    from core.transliterate import _translit_token
+
+    compound, src_c = _translit_token("көвүн-күүкн")
+    check(src_c == "split" and " " in compound,
+          f"составное слово разобрано по частям: көвүн-күүкн -> {compound}")
+    suffix, src_s = _translit_token("һазр-ән")
+    check(src_s == "model" and suffix == "γazar-bēn",
+          f"суффикс через дефис НЕ разобран: һазр-ән -> {suffix}")
+    whole, src_w = _translit_token("моңһл-күрә")
+    check(src_w == "dict", f"словарная пара берётся целиком: моңһл-күрә -> {whole}")
+
+    from core.translit_todo import translit_to_todo
+
+    check(" " not in translit_to_todo(compound),
+          "в составном слове широкий пробел, а не узкий неразрывный")
+    check(" " in translit_to_todo(suffix),
+          "у суффикса, наоборот, узкий неразрывный пробел")
+
     print("\n5. Фидбэк: 👍")
     row = await storage.get_request(1)
     await dp.feed_update(bot, cb(f"fb:up:{row['id']}"))

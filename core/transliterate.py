@@ -261,6 +261,12 @@ def transliterate_word(word):
 
 _WORD_RE = re.compile(r"[а-яёәөүһҗңa-z]+(?:-[а-яёәөүһҗңa-z]+)*", re.IGNORECASE)
 
+# Чем соединять части составного слова, разобранного по дефису.
+# Обычный пробел: көвүн-күүкн — это два полноценных слова, и в письме они
+# разделяются широким пробелом, а не узким неразрывным (узкий,  , у нас
+# означает границу суффикса и получается из дефиса — см. translit_todo.py).
+COMPOUND_JOINER = " "
+
 
 def _restore_case(original_token, result):
     if original_token.isupper() and len(original_token) > 1:
@@ -271,14 +277,34 @@ def _restore_case(original_token, result):
 
 
 def _translit_token(token):
+    """Одно «слово» из текста -> транслитерация. Возвращает (результат,
+    откуда взялось): dict — точный словарь, split — составное слово,
+    разобранное по дефису, model — предсказание модели."""
     b = get_bundle()
     key = unicodedata.normalize("NFC", token.lower())
+
+    # 1. весь токен целиком есть в словаре — это самый надёжный ответ,
+    #    в словаре уже лежат и зер-зев, и моңһл-күрә
     result = b.dictionary.get(key)
-    source = "dict"
-    if result is None:
-        result = transliterate_word(key)
-        source = "model"
-    return _restore_case(token, result), source
+    if result is not None:
+        return _restore_case(token, result), "dict"
+
+    # 2. составное слово через дефис: көвүн-күүкн, эк-эцк, ах-дү.
+    #    Модель на таком токене целиком выдаёт мусор (көвүн-күүкн ->
+    #    köböüngöükken), а по частям всё чисто. Но делим ТОЛЬКО когда
+    #    каждая часть сама по себе есть в словаре как самостоятельное
+    #    слово — иначе так же разобрался бы и суффикс: в һазр-ән «ән»
+    #    отдельным словом не существует, и целый токен модель обрабатывает
+    #    правильно (γazar-bēn), а по частям вышло бы неверное γazar-ani.
+    if "-" in key:
+        parts = key.split("-")
+        if len(parts) > 1 and all(p and p in b.dictionary for p in parts):
+            joined = COMPOUND_JOINER.join(b.dictionary[p] for p in parts)
+            return _restore_case(token, joined), "split"
+
+    # 3. всё остальное — модель, на токене целиком (суффиксы через дефис
+    #    попадают сюда и обрабатываются как надо)
+    return _restore_case(token, transliterate_word(key)), "model"
 
 
 def transliterate(text):
@@ -289,9 +315,9 @@ def transliterate(text):
 
 def transliterate_with_stats(text):
     """То же самое, но дополнительно возвращает статистику по источнику
-    каждого слова: (результат, {"dict": n, "model": m})."""
+    каждого слова: (результат, {"dict": n, "split": k, "model": m})."""
     out_parts = []
-    stats = {"dict": 0, "model": 0}
+    stats = {"dict": 0, "split": 0, "model": 0}
     pos = 0
     for m in _WORD_RE.finditer(text):
         out_parts.append(text[pos:m.start()])

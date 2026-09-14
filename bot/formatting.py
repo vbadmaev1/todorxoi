@@ -26,9 +26,13 @@ def timing_line(res: Result) -> str:
         parts.append(" · ".join(steps))
     line = " · ".join(parts)
     if res.stats:
-        d, m = res.stats.get("dict", 0), res.stats.get("model", 0)
-        if d or m:
+        d = res.stats.get("dict", 0)
+        s = res.stats.get("split", 0)
+        m = res.stats.get("model", 0)
+        if d or s or m:
             line += f"\n📚 из словаря: {d} · предсказано моделью: {m}"
+            if s:
+                line += f" · составных слов разобрано: {s}"
     return line
 
 

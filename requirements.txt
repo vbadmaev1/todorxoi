@@ -1,0 +1,10 @@
+# Проверено на aiogram 3.31.0, Pillow 12.2.0, torch 2.14 (CPU).
+aiogram>=3.15,<4
+Pillow>=10.0,<13
+python-dotenv>=1.0,<2
+
+# CPU-сборки достаточно: модель на ~430 тыс. параметров, GPU не нужен.
+# Если ставите на маленький VPS и не хотите тянуть ~800 МБ CUDA-колёс:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# (и тогда эту строку можно закомментировать)
+torch>=2.2,<3
